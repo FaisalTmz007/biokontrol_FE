@@ -1,12 +1,12 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer 
 } from 'recharts';
 import { 
   Calendar, Cpu, Droplet, Flame, Gauge, Thermometer, 
-  ToggleLeft, Activity, Clock, Filter, AlertTriangle
+  ToggleLeft, Activity, Clock, Filter, AlertTriangle, RefreshCw
 } from 'lucide-react';
 import { supabase } from "./utils/supabaseClient";
 
@@ -32,8 +32,11 @@ export default function Dashboard() {
     end: new Date().toISOString().split('T')[0]
   });
   
-  // Control mode (auto/manual) - commented out as requested
-  // const [isAutoMode, setIsAutoMode] = useState(true);
+  // Loading state for charts
+  const [isLoadingCharts, setIsLoadingCharts] = useState(false);
+  
+  // Auto-refresh toggle
+  const [autoRefresh, setAutoRefresh] = useState(true);
   
   // Actuator states
   const [actuators, setActuators] = useState({
@@ -43,6 +46,65 @@ export default function Dashboard() {
     solenoid: 0,
     stirrer: 0
   });
+  
+  // Function to fetch historical data and sensor errors
+  const fetchChartData = useCallback(async () => {
+    setIsLoadingCharts(true);
+    
+    try {
+      // Fetch historical sensor data
+      const { data: historicalData, error: historicalError } = await supabase
+        .from('sensors')
+        .select('*')
+        .gte('created_at', `${dateRange.start}T00:00:00Z`)
+        .lte('created_at', `${dateRange.end}T23:59:59Z`)
+        .order('created_at', { ascending: true });
+        
+      if (historicalError) {
+        console.error('Error fetching historical data:', historicalError);
+      } else {
+        // Format data for charts
+        const formattedData = historicalData.map(item => ({
+          timestamp: new Date(item.created_at).toLocaleTimeString(),
+          ph: item.ph,
+          temp: item.temp,
+          ch4: item.ch4,
+          pressure: item.pressure
+        }));
+        
+        setHistoricalData(formattedData);
+      }
+      
+      // Fetch sensor errors
+      const { data: errorData, error: errorError } = await supabase
+        .from('sensor_errors')
+        .select('*')
+        .gte('created_at', `${dateRange.start}T00:00:00Z`)
+        .lte('created_at', `${dateRange.end}T23:59:59Z`)
+        .order('created_at', { ascending: true });
+        
+      if (errorError) {
+        console.error('Error fetching sensor errors:', errorError);
+      } else {
+        console.log("sensor error: ", errorData);
+        
+        // Format error data for charts
+        const formattedErrorData = errorData.map(item => ({
+          timestamp: new Date(item.created_at).toLocaleTimeString(),
+          ph_error: item.ph_error,
+          ph_delta_error: item.ph_delta_error,
+          temp_error: item.temp_error,
+          temp_delta_error: item.temp_delta_error
+        }));
+        
+        setSensorErrors(formattedErrorData);
+      }
+    } catch (error) {
+      console.error('Error fetching chart data:', error);
+    } finally {
+      setIsLoadingCharts(false);
+    }
+  }, [dateRange]);
   
   // Fetch the latest sensor data
   useEffect(() => {
@@ -83,6 +145,11 @@ export default function Dashboard() {
             ch4: payload.new.ch4,
             pressure: payload.new.pressure
           });
+          
+          // Auto-refresh chart data when new sensor data arrives
+          if (autoRefresh) {
+            fetchChartData();
+          }
         }
       )
       .subscribe();
@@ -90,65 +157,23 @@ export default function Dashboard() {
     return () => {
       supabase.removeChannel(subscription);
     };
-  }, []);
+  }, [fetchChartData, autoRefresh]);
   
-  // Fetch historical sensor data and error data based on date range
+  // Fetch chart data when date range changes or component mounts
   useEffect(() => {
-    const fetchHistoricalData = async () => {
-      const { data, error } = await supabase
-        .from('sensors')
-        .select('*')
-        .gte('created_at', `${dateRange.start}T00:00:00Z`)
-        .lte('created_at', `${dateRange.end}T23:59:59Z`)
-        .order('created_at', { ascending: true });
-        
-      if (error) {
-        console.error('Error fetching historical data:', error);
-        return;
-      }
-      
-      // Format data for charts
-      const formattedData = data.map(item => ({
-        timestamp: new Date(item.created_at).toLocaleTimeString(),
-        ph: item.ph,
-        temp: item.temp,
-        ch4: item.ch4,
-        pressure: item.pressure
-      }));
-      
-      setHistoricalData(formattedData);
-    };
+    fetchChartData();
+  }, [fetchChartData]);
+  
+  // Auto-refresh chart data every 30 seconds if auto-refresh is enabled
+  useEffect(() => {
+    if (!autoRefresh) return;
     
-    const fetchSensorErrors = async () => {
-      const { data, error } = await supabase
-        .from('sensor_errors')
-        .select('*')
-        .gte('created_at', `${dateRange.start}T00:00:00Z`)
-        .lte('created_at', `${dateRange.end}T23:59:59Z`)
-        .order('created_at', { ascending: true });
-        
-      if (error) {
-        console.error('Error fetching sensor errors:', error);
-        return;
-      }
-
-      console.log("sensor error: ", data);
-      
-      // Format error data for charts
-      const formattedErrorData = data.map(item => ({
-        timestamp: new Date(item.created_at).toLocaleTimeString(),
-        ph_error: item.ph_error,
-        ph_delta_error: item.ph_delta_error,
-        temp_error: item.temp_error,
-        temp_delta_error: item.temp_delta_error
-      }));
-      
-      setSensorErrors(formattedErrorData);
-    };
+    const interval = setInterval(() => {
+      fetchChartData();
+    }, 10000); // 10 seconds
     
-    fetchHistoricalData();
-    fetchSensorErrors();
-  }, [dateRange]);
+    return () => clearInterval(interval);
+  }, [fetchChartData, autoRefresh]);
   
   // Fetch actuator states
   useEffect(() => {
@@ -209,19 +234,19 @@ export default function Dashboard() {
               <Cpu className="h-8 w-8" />
               <h1 className="text-2xl font-bold">BioKontrol Dashboard</h1>
             </div>
-            {/* Control mode toggle commented out as requested */}
-            {/* <div className="flex items-center space-x-2">
-              <span className="text-sm">System Mode:</span>
+            {/* Auto-refresh toggle */}
+            <div className="flex items-center space-x-2">
+              <span className="text-sm">Auto-refresh:</span>
               <button 
-                onClick={toggleControlMode}
+                onClick={() => setAutoRefresh(!autoRefresh)}
                 className={`px-3 py-1 rounded-full flex items-center ${
-                  isAutoMode ? 'bg-green-500' : 'bg-purple-500'
+                  autoRefresh ? 'bg-green-500' : 'bg-gray-500'
                 }`}
               >
-                <span className="mr-1">{isAutoMode ? 'Automatic' : 'Manual'}</span>
-                <ToggleLeft className="h-5 w-5" />
+                <RefreshCw className={`h-4 w-4 mr-1 ${autoRefresh ? 'animate-spin' : ''}`} />
+                <span className="text-sm">{autoRefresh ? 'ON' : 'OFF'}</span>
               </button>
-            </div> */}
+            </div>
           </div>
         </div>
       </header>
@@ -252,7 +277,7 @@ export default function Dashboard() {
             <div className="flex flex-col items-center">
               <div className="text-4xl font-bold text-red-600">{sensorData.temp.toFixed(1)}°C</div>
               <div className="text-sm text-gray-500 mt-2">
-                Optimal: 25°C - 30°C
+                Optimal: 25°C - 35°C
               </div>
             </div>
           </div>
@@ -266,7 +291,7 @@ export default function Dashboard() {
             <div className="flex flex-col items-center">
               <div className="text-4xl font-bold text-yellow-600">{sensorData.ch4.toFixed(2)} ppm</div>
               <div className="text-sm text-gray-500 mt-2">
-                Warning: Above 1000 ppm
+                Warning: Above 6000 ppm
               </div>
             </div>
           </div>
@@ -280,7 +305,7 @@ export default function Dashboard() {
             <div className="flex flex-col items-center">
               <div className="text-4xl font-bold text-indigo-600">{sensorData.pressure.toFixed(2)} kPa</div>
               <div className="text-sm text-gray-500 mt-2">
-                Normal: 100 - 110 kPa
+                Normal: 1020 hPa
               </div>
             </div>
           </div>
@@ -292,9 +317,12 @@ export default function Dashboard() {
             <h2 className="text-xl font-semibold text-gray-700 flex items-center">
               <Activity className="h-6 w-6 mr-2 text-blue-500" />
               Sensor Data History & Error Analysis
+              {isLoadingCharts && (
+                <RefreshCw className="h-5 w-5 ml-2 text-blue-500 animate-spin" />
+              )}
             </h2>
             
-            {/* Date Range Filter */}
+            {/* Date Range Filter - Auto applies on change */}
             <div className="flex items-center space-x-4">
               <div className="flex items-center space-x-2">
                 <Calendar className="h-5 w-5 text-gray-500" />
@@ -315,9 +343,13 @@ export default function Dashboard() {
                   className="border rounded px-2 py-1 text-sm text-gray-700"
                 />
               </div>
-              <button className="bg-blue-500 text-white px-3 py-1 rounded flex items-center text-sm">
-                <Filter className="h-4 w-4 mr-1" />
-                Apply Filter
+              <button 
+                onClick={fetchChartData}
+                disabled={isLoadingCharts}
+                className="bg-blue-500 text-white px-3 py-1 rounded flex items-center text-sm hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <RefreshCw className={`h-4 w-4 mr-1 ${isLoadingCharts ? 'animate-spin' : ''}`} />
+                Refresh
               </button>
             </div>
           </div>
@@ -328,7 +360,7 @@ export default function Dashboard() {
             <div className="h-80">
               <h3 className="text-lg font-medium text-gray-700 mb-2 flex items-center">
                 <Droplet className="h-5 w-5 mr-1 text-blue-500" />
-                pH Level & Error Analysis
+                pH Level
               </h3>
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={historicalData}>
@@ -365,7 +397,7 @@ export default function Dashboard() {
             <div className="h-80">
               <h3 className="text-lg font-medium text-gray-700 mb-2 flex items-center">
                 <Thermometer className="h-5 w-5 mr-1 text-red-500" />
-                Temperature Level & Error Analysis
+                Temperature Level
               </h3>
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={historicalData}>
@@ -576,7 +608,7 @@ export default function Dashboard() {
       
       <footer className="bg-gray-800 text-white py-4 mt-8">
         <div className="container mx-auto px-4 text-center">
-          <p>IoT Monitoring System &copy; {new Date().getFullYear()}</p>
+          <p>Biokontrol Monitoring System &copy; {new Date().getFullYear()}</p>
         </div>
       </footer>
     </div>
