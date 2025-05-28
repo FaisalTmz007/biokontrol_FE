@@ -164,7 +164,7 @@ export default function Dashboard() {
     fetchChartData();
   }, [fetchChartData]);
   
-  // Auto-refresh chart data every 30 seconds if auto-refresh is enabled
+  // Auto-refresh chart data every 10 seconds if auto-refresh is enabled
   useEffect(() => {
     if (!autoRefresh) return;
     
