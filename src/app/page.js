@@ -175,9 +175,9 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [fetchChartData, autoRefresh]);
   
-  // Fetch actuator states
-  useEffect(() => {
-    const fetchActuators = async () => {
+  // Function to fetch actuator states
+  const fetchActuators = useCallback(async () => {
+    try {
       const { data, error } = await supabase
         .from('actuators')
         .select('*')
@@ -198,8 +198,13 @@ export default function Dashboard() {
           stirrer: data[0].stirrer
         });
       }
-    };
-    
+    } catch (error) {
+      console.error('Error fetching actuators:', error);
+    }
+  }, []);
+  
+  // Fetch actuator states
+  useEffect(() => {
     fetchActuators();
     
     // Set up real-time subscription for actuators
@@ -222,7 +227,18 @@ export default function Dashboard() {
     return () => {
       supabase.removeChannel(actuatorsSubscription);
     };
-  }, []);
+  }, [fetchActuators]);
+  
+  // Auto-refresh actuator data every 10 seconds if auto-refresh is enabled
+  useEffect(() => {
+    if (!autoRefresh) return;
+    
+    const actuatorInterval = setInterval(() => {
+      fetchActuators();
+    }, 10000); // 10 seconds - more frequent for actuator status
+    
+    return () => clearInterval(actuatorInterval);
+  }, [fetchActuators, autoRefresh]);
   
   return (
     <div className="min-h-screen bg-gray-100">
@@ -235,17 +251,22 @@ export default function Dashboard() {
               <h1 className="text-2xl font-bold">BioKontrol Dashboard</h1>
             </div>
             {/* Auto-refresh toggle */}
-            <div className="flex items-center space-x-2">
-              <span className="text-sm">Auto-refresh:</span>
-              <button 
-                onClick={() => setAutoRefresh(!autoRefresh)}
-                className={`px-3 py-1 rounded-full flex items-center ${
-                  autoRefresh ? 'bg-green-500' : 'bg-gray-500'
-                }`}
-              >
-                <RefreshCw className={`h-4 w-4 mr-1 ${autoRefresh ? 'animate-spin' : ''}`} />
-                <span className="text-sm">{autoRefresh ? 'ON' : 'OFF'}</span>
-              </button>
+            <div className="flex items-center space-x-4">
+              <div className="text-sm text-gray-300">
+                Charts: 10s | Actuators: 10s
+              </div>
+              <div className="flex items-center space-x-2">
+                <span className="text-sm">Auto-refresh:</span>
+                <button 
+                  onClick={() => setAutoRefresh(!autoRefresh)}
+                  className={`px-3 py-1 rounded-full flex items-center ${
+                    autoRefresh ? 'bg-green-500' : 'bg-gray-500'
+                  }`}
+                >
+                  <RefreshCw className={`h-4 w-4 mr-1 ${autoRefresh ? 'animate-spin' : ''}`} />
+                  <span className="text-sm">{autoRefresh ? 'ON' : 'OFF'}</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -277,7 +298,7 @@ export default function Dashboard() {
             <div className="flex flex-col items-center">
               <div className="text-4xl font-bold text-red-600">{sensorData.temp.toFixed(1)}°C</div>
               <div className="text-sm text-gray-500 mt-2">
-                Optimal: 25°C - 35°C
+                Optimal: 25°C - 30°C
               </div>
             </div>
           </div>
@@ -291,7 +312,7 @@ export default function Dashboard() {
             <div className="flex flex-col items-center">
               <div className="text-4xl font-bold text-yellow-600">{sensorData.ch4.toFixed(2)} ppm</div>
               <div className="text-sm text-gray-500 mt-2">
-                Warning: Above 6000 ppm
+                Warning: Above 1000 ppm
               </div>
             </div>
           </div>
@@ -305,7 +326,7 @@ export default function Dashboard() {
             <div className="flex flex-col items-center">
               <div className="text-4xl font-bold text-indigo-600">{sensorData.pressure.toFixed(2)} kPa</div>
               <div className="text-sm text-gray-500 mt-2">
-                Normal: 1020 hPa
+                Normal: 100 - 110 kPa
               </div>
             </div>
           </div>
@@ -360,7 +381,7 @@ export default function Dashboard() {
             <div className="h-80">
               <h3 className="text-lg font-medium text-gray-700 mb-2 flex items-center">
                 <Droplet className="h-5 w-5 mr-1 text-blue-500" />
-                pH Level
+                pH Level & Error Analysis
               </h3>
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={historicalData}>
@@ -397,7 +418,7 @@ export default function Dashboard() {
             <div className="h-80">
               <h3 className="text-lg font-medium text-gray-700 mb-2 flex items-center">
                 <Thermometer className="h-5 w-5 mr-1 text-red-500" />
-                Temperature Level
+                Temperature Level & Error Analysis
               </h3>
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={historicalData}>
@@ -470,9 +491,18 @@ export default function Dashboard() {
         
         {/* Actuator Controls */}
         <div className="bg-white rounded-lg shadow-md p-6">
-          <div className="flex items-center mb-6">
-            <Cpu className="h-6 w-6 mr-2 text-gray-700" />
-            <h2 className="text-xl font-semibold text-gray-700">Actuator Status Monitor</h2>
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center">
+              <Cpu className="h-6 w-6 mr-2 text-gray-700" />
+              <h2 className="text-xl font-semibold text-gray-700">Actuator Status Monitor</h2>
+            </div>
+            <button 
+              onClick={fetchActuators}
+              className="bg-blue-500 text-white px-3 py-1 rounded flex items-center text-sm hover:bg-blue-600"
+            >
+              <RefreshCw className="h-4 w-4 mr-1" />
+              Refresh Status
+            </button>
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -608,7 +638,7 @@ export default function Dashboard() {
       
       <footer className="bg-gray-800 text-white py-4 mt-8">
         <div className="container mx-auto px-4 text-center">
-          <p>Biokontrol Monitoring System &copy; {new Date().getFullYear()}</p>
+          <p>IoT Monitoring System &copy; {new Date().getFullYear()}</p>
         </div>
       </footer>
     </div>
