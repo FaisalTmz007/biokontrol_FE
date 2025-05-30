@@ -38,6 +38,13 @@ export default function Dashboard() {
   // Auto-refresh toggle
   const [autoRefresh, setAutoRefresh] = useState(true);
   
+  // pH Calibration state
+  const [phCalibration, setPhCalibration] = useState({
+    referencePh: '',
+    currentPh: '',
+    isCalibrating: false
+  });
+  
   // Actuator states
   const [actuators, setActuators] = useState({
     pump_acid: 0,
@@ -240,6 +247,60 @@ export default function Dashboard() {
     return () => clearInterval(actuatorInterval);
   }, [fetchActuators, autoRefresh]);
   
+  // Function to handle pH calibration
+  const handlePhCalibration = async () => {
+    if (!phCalibration.referencePh || !phCalibration.currentPh) {
+      alert('Mohon isi kedua nilai pH');
+      return;
+    }
+    
+    const refPh = parseFloat(phCalibration.referencePh);
+    const curPh = parseFloat(phCalibration.currentPh);
+    
+    if (isNaN(refPh) || isNaN(curPh)) {
+      alert('Nilai pH harus berupa angka yang valid');
+      return;
+    }
+    
+    if (refPh < 0 || refPh > 14 || curPh < 0 || curPh > 14) {
+      alert('Nilai pH harus berada dalam rentang 0-14');
+      return;
+    }
+    
+    setPhCalibration(prev => ({ ...prev, isCalibrating: true }));
+    
+    try {
+      const response = await fetch('/api/calibrate-ph', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          referencePh: refPh,
+          currentPh: curPh
+        })
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        alert(`Kalibrasi pH berhasil!\nOffset: ${result.data.offset.toFixed(3)}`);
+        setPhCalibration({
+          referencePh: '',
+          currentPh: '',
+          isCalibrating: false
+        });
+      } else {
+        alert(`Kalibrasi pH gagal: ${result.message}`);
+      }
+    } catch (error) {
+      console.error('Error during pH calibration:', error);
+      alert('Terjadi kesalahan saat kalibrasi pH');
+    } finally {
+      setPhCalibration(prev => ({ ...prev, isCalibrating: false }));
+    }
+  };
+  
   return (
     <div className="min-h-screen bg-gray-100">
       {/* Header */}
@@ -252,9 +313,6 @@ export default function Dashboard() {
             </div>
             {/* Auto-refresh toggle */}
             <div className="flex items-center space-x-4">
-              <div className="text-sm text-gray-300">
-                Charts: 10s | Actuators: 10s
-              </div>
               <div className="flex items-center space-x-2">
                 <span className="text-sm">Auto-refresh:</span>
                 <button 
@@ -634,11 +692,100 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
+
+        {/* pH Calibration Section */}
+        <div className="bg-white rounded-lg shadow-md p-6 mt-8">
+          <div className="flex items-center mb-6">
+            <Droplet className="h-6 w-6 mr-2 text-blue-500" />
+            <h2 className="text-xl font-semibold text-gray-700">Kalibrasi pH Sensor</h2>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
+            {/* Reference pH Input */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Nilai pH Meter (Referensi)
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                max="14"
+                value={phCalibration.referencePh}
+                onChange={(e) => setPhCalibration(prev => ({ ...prev, referencePh: e.target.value }))}
+                placeholder="Contoh: 7.00"
+                disabled={phCalibration.isCalibrating}
+                className="w-full px-3 py-2 border border-gray-300 text-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+              <p className="text-xs text-gray-500 mt-1">Nilai pH dari alat ukur standar</p>
+            </div>
+            
+            {/* Current pH Input */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Nilai pH Sensor Saat Ini
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                max="14"
+                value={phCalibration.currentPh}
+                onChange={(e) => setPhCalibration(prev => ({ ...prev, currentPh: e.target.value }))}
+                placeholder="Contoh: 6.85"
+                disabled={phCalibration.isCalibrating}
+                className="w-full px-3 py-2 border border-gray-300 text-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+              <p className="text-xs text-gray-500 mt-1">Nilai pH yang terbaca sensor</p>
+            </div>
+            
+            {/* Calibration Button and Info */}
+            <div>
+              <button
+                onClick={handlePhCalibration}
+                disabled={phCalibration.isCalibrating || !phCalibration.referencePh || !phCalibration.currentPh}
+                className="w-full bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+              >
+                {phCalibration.isCalibrating ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    Mengkalibrasi...
+                  </>
+                ) : (
+                  <>
+                    <Droplet className="h-4 w-4 mr-2" />
+                    Kalibrasi pH
+                  </>
+                )}
+              </button>
+              
+              {/* Calculate and show offset preview */}
+              {phCalibration.referencePh && phCalibration.currentPh && (
+                <div className="mt-2 p-2 bg-gray-50 rounded text-sm">
+                  <div className="text-gray-600">Offset yang akan dikirim:</div>
+                  <div className="font-mono text-blue-600">
+                    {(parseFloat(phCalibration.referencePh) - parseFloat(phCalibration.currentPh)).toFixed(3)}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          
+          <div className="mt-4 p-4 bg-blue-50 rounded-lg">
+            <h3 className="text-sm font-medium text-blue-900 mb-2">Cara Kalibrasi:</h3>
+            <ol className="text-sm text-blue-800 space-y-1">
+              <li>1. Ukur pH larutan dengan pH meter standar</li>
+              <li>2. Masukkan nilai pH meter ke kolom "Nilai pH Meter"</li>
+              <li>3. Masukkan nilai pH yang terbaca sensor ke kolom "Nilai pH Sensor"</li>
+              <li>4. Klik tombol "Kalibrasi pH" untuk mengirim offset ke ESP32</li>
+            </ol>
+          </div>
+        </div>
       </main>
       
       <footer className="bg-gray-800 text-white py-4 mt-8">
         <div className="container mx-auto px-4 text-center">
-          <p>IoT Monitoring System &copy; {new Date().getFullYear()}</p>
+          <p>BioKontrol &copy; {new Date().getFullYear()}</p>
         </div>
       </footer>
     </div>
