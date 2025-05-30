@@ -6,7 +6,8 @@ import {
 } from 'recharts';
 import { 
   Calendar, Cpu, Droplet, Flame, Gauge, Thermometer, 
-  ToggleLeft, Activity, Clock, Filter, AlertTriangle, RefreshCw
+  ToggleLeft, Activity, Clock, Filter, AlertTriangle, RefreshCw,
+  Wifi, WifiOff, PlayCircle, PauseCircle
 } from 'lucide-react';
 import { supabase } from "./utils/supabaseClient";
 
@@ -25,6 +26,15 @@ export default function Dashboard() {
   
   // Sensor error data
   const [sensorErrors, setSensorErrors] = useState([]);
+  
+  // System status state
+  const [systemStatus, setSystemStatus] = useState({
+    warmupActive: false,
+    uptimeHours: 0,
+    lastUpdate: null,
+    mqttConnected: false,
+    dataStorageActive: false
+  });
   
   // Date range for filtering chart data
   const [dateRange, setDateRange] = useState({
@@ -53,6 +63,20 @@ export default function Dashboard() {
     solenoid: 0,
     stirrer: 0
   });
+  
+  // Function to fetch system status
+  const fetchSystemStatus = useCallback(async () => {
+    try {
+      const response = await fetch('/api/system-status');
+      const result = await response.json();
+      
+      if (result.success) {
+        setSystemStatus(result.data);
+      }
+    } catch (error) {
+      console.error('Error fetching system status:', error);
+    }
+  }, []);
   
   // Function to fetch historical data and sensor errors
   const fetchChartData = useCallback(async () => {
@@ -170,6 +194,17 @@ export default function Dashboard() {
   useEffect(() => {
     fetchChartData();
   }, [fetchChartData]);
+  
+  // Fetch system status on component mount and set up periodic refresh
+  useEffect(() => {
+    fetchSystemStatus();
+    
+    const statusInterval = setInterval(() => {
+      fetchSystemStatus();
+    }, 5000); // Update every 5 seconds
+    
+    return () => clearInterval(statusInterval);
+  }, [fetchSystemStatus]);
   
   // Auto-refresh chart data every 10 seconds if auto-refresh is enabled
   useEffect(() => {
@@ -311,8 +346,44 @@ export default function Dashboard() {
               <Cpu className="h-8 w-8" />
               <h1 className="text-2xl font-bold">BioKontrol Dashboard</h1>
             </div>
-            {/* Auto-refresh toggle */}
-            <div className="flex items-center space-x-4">
+            {/* Status and Controls */}
+            <div className="flex items-center space-x-6">
+              {/* System Status */}
+              <div className="flex items-center space-x-4">
+                {/* Warmup Status */}
+                <div className="flex items-center space-x-2">
+                  {systemStatus.warmupActive ? (
+                    <PauseCircle className="h-5 w-5 text-yellow-300" />
+                  ) : (
+                    <PlayCircle className="h-5 w-5 text-green-300" />
+                  )}
+                  <span className="text-sm">
+                    {systemStatus.warmupActive ? 'Warmup' : 'Active'}
+                  </span>
+                </div>
+                
+                {/* Uptime */}
+                <div className="flex items-center space-x-2">
+                  <Clock className="h-5 w-5 text-blue-300" />
+                  <span className="text-sm">
+                    {systemStatus.uptimeHours.toFixed(1)}h
+                  </span>
+                </div>
+                
+                {/* MQTT Connection Status */}
+                <div className="flex items-center space-x-2">
+                  {systemStatus.mqttConnected ? (
+                    <Wifi className="h-5 w-5 text-green-300" />
+                  ) : (
+                    <WifiOff className="h-5 w-5 text-red-300" />
+                  )}
+                  <span className="text-sm">
+                    {systemStatus.mqttConnected ? 'Connected' : 'Offline'}
+                  </span>
+                </div>
+              </div>
+              
+              {/* Auto-refresh toggle */}
               <div className="flex items-center space-x-2">
                 <span className="text-sm">Auto-refresh:</span>
                 <button 
@@ -331,6 +402,23 @@ export default function Dashboard() {
       </header>
       
       <main className="container mx-auto px-4 py-6">
+        {/* System Status Banner */}
+        {systemStatus.warmupActive && (
+          <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
+            <div className="flex items-center">
+              <AlertTriangle className="h-5 w-5 text-yellow-400 mr-2" />
+              <div>
+                <p className="text-yellow-800 font-medium">
+                  System sedang dalam mode warmup
+                </p>
+                <p className="text-yellow-700 text-sm">
+                  Data sensor sedang distabilkan. Penyimpanan data akan aktif setelah warmup selesai.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+        
         {/* Sensor Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           {/* pH Card */}
