@@ -38,6 +38,10 @@ export default function Dashboard() {
   // Auto-refresh toggle
   const [autoRefresh, setAutoRefresh] = useState(true);
   
+  // Warmup status
+  const [isWarmingUp, setIsWarmingUp] = useState(false);
+  const [warmupProgress, setWarmupProgress] = useState(0);
+  
   // pH Calibration state
   const [phCalibration, setPhCalibration] = useState({
     referencePh: '',
@@ -53,6 +57,24 @@ export default function Dashboard() {
     solenoid: 0,
     stirrer: 0
   });
+  
+  // Function to check warmup status
+  const checkWarmupStatus = useCallback(async () => {
+    try {
+      const response = await fetch(process.env.NEXT_PUBLIC_BACKEND_URL, '/api/warmup-status');
+      const result = await response.json();
+      
+      if (result.success) {
+        setIsWarmingUp(result.data.isWarmingUp);
+        setWarmupProgress(result.data.progress || 0);
+      }
+    } catch (error) {
+      console.error('Error checking warmup status:', error);
+      // If there's an error, assume not warming up
+      setIsWarmingUp(false);
+      setWarmupProgress(0);
+    }
+  }, []);
   
   // Function to fetch historical data and sensor errors
   const fetchChartData = useCallback(async () => {
@@ -182,6 +204,19 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [fetchChartData, autoRefresh]);
   
+  // Check warmup status periodically
+  useEffect(() => {
+    // Check warmup status immediately
+    checkWarmupStatus();
+    
+    // Check warmup status every 5 seconds
+    const warmupInterval = setInterval(() => {
+      checkWarmupStatus();
+    }, 5000);
+    
+    return () => clearInterval(warmupInterval);
+  }, [checkWarmupStatus]);
+  
   // Function to fetch actuator states
   const fetchActuators = useCallback(async () => {
     try {
@@ -270,7 +305,7 @@ export default function Dashboard() {
     setPhCalibration(prev => ({ ...prev, isCalibrating: true }));
     
     try {
-      const response = await fetch('/api/calibrate-ph', {
+      const response = await fetch(process.env.NEXT_PUBLIC_BACKEND_URL, '/api/calibrate-ph', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -295,7 +330,7 @@ export default function Dashboard() {
       }
     } catch (error) {
       console.error('Error during pH calibration:', error);
-      alert('Terjadi kesalahan saat kalibrasi pH');
+      alert('Terjadi kesalahan saat kalibrasi pH. Pastikan koneksi internet stabil.');
     } finally {
       setPhCalibration(prev => ({ ...prev, isCalibrating: false }));
     }
@@ -311,8 +346,24 @@ export default function Dashboard() {
               <Cpu className="h-8 w-8" />
               <h1 className="text-2xl font-bold">BioKontrol Dashboard</h1>
             </div>
-            {/* Auto-refresh toggle */}
-            <div className="flex items-center space-x-4">
+            {/* Auto-refresh toggle and Warmup status */}
+            <div className="flex items-center space-x-6">
+              {/* Warmup Status */}
+              <div className="flex items-center space-x-2">
+                <span className="text-sm">System Status:</span>
+                <div className={`px-3 py-1 rounded-full flex items-center ${
+                  isWarmingUp ? 'bg-orange-500' : 'bg-green-500'
+                }`}>
+                  <div className={`h-2 w-2 rounded-full mr-2 ${
+                    isWarmingUp ? 'bg-orange-200 animate-pulse' : 'bg-green-200'
+                  }`}></div>
+                  <span className="text-sm">
+                    {isWarmingUp ? `Warming Up (${warmupProgress}%)` : 'Ready'}
+                  </span>
+                </div>
+              </div>
+              
+              {/* Auto-refresh toggle */}
               <div className="flex items-center space-x-2">
                 <span className="text-sm">Auto-refresh:</span>
                 <button 
@@ -775,9 +826,9 @@ export default function Dashboard() {
             <h3 className="text-sm font-medium text-blue-900 mb-2">Cara Kalibrasi:</h3>
             <ol className="text-sm text-blue-800 space-y-1">
               <li>1. Ukur pH larutan dengan pH meter standar</li>
-              <li>2. Masukkan nilai pH meter ke kolom "Nilai pH Meter"</li>
-              <li>3. Masukkan nilai pH yang terbaca sensor ke kolom "Nilai pH Sensor"</li>
-              <li>4. Klik tombol "Kalibrasi pH" untuk mengirim offset ke ESP32</li>
+              <li>2. Masukkan nilai pH meter ke kolom &quot;Nilai pH Meter&quot;</li>
+              <li>3. Masukkan nilai pH yang terbaca sensor ke kolom &quot;Nilai pH Sensor&quot;</li>
+              <li>4. Klik tombol &quot;Kalibrasi pH&quot; untuk mengirim offset ke ESP32</li>
             </ol>
           </div>
         </div>
