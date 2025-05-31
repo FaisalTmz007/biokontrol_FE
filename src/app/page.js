@@ -67,11 +67,40 @@ export default function Dashboard() {
     solenoid: 0,
     stirrer: 0
   });
+
+  // FIXED: Function to fetch system status
+  const fetchSystemStatus = useCallback(async () => {
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/system-status`);
+      const result = await response.json();
+      
+      if (result.success) {
+        setSystemStatus({
+          warmupActive: result.data.warmupActive || false,
+          uptimeHours: result.data.uptimeHours || 0,
+          lastUpdate: result.data.lastUpdate || null,
+          mqttConnected: result.data.mqttConnected || false,
+          dataStorageActive: result.data.dataStorageActive || false
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching system status:', error);
+      // Set default values if fetch fails
+      setSystemStatus({
+        warmupActive: false,
+        uptimeHours: 0,
+        lastUpdate: null,
+        mqttConnected: false,
+        dataStorageActive: false
+      });
+    }
+  }, []);
   
   // Function to check warmup status
   const checkWarmupStatus = useCallback(async () => {
     try {
-      const response = await fetch(process.env.NEXT_PUBLIC_BACKEND_URL, '/api/warmup-status');
+      // FIXED: URL construction
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/warmup-status`);
       const result = await response.json();
       
       if (result.success) {
@@ -326,7 +355,8 @@ export default function Dashboard() {
     setPhCalibration(prev => ({ ...prev, isCalibrating: true }));
     
     try {
-      const response = await fetch(process.env.NEXT_PUBLIC_BACKEND_URL, '/api/calibrate-ph', {
+      // FIXED: URL construction
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/calibrate-ph`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
