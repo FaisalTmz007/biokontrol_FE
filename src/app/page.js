@@ -6,7 +6,8 @@ import {
 } from 'recharts';
 import { 
   Calendar, Cpu, Droplet, Flame, Gauge, Thermometer, 
-  ToggleLeft, Activity, Clock, Filter, AlertTriangle, RefreshCw
+  ToggleLeft, Activity, Clock, Filter, AlertTriangle, RefreshCw,
+  Wifi, WifiOff, PlayCircle, PauseCircle
 } from 'lucide-react';
 import { supabase } from "./utils/supabaseClient";
 
@@ -25,6 +26,15 @@ export default function Dashboard() {
   
   // Sensor error data
   const [sensorErrors, setSensorErrors] = useState([]);
+  
+  // System status state
+  const [systemStatus, setSystemStatus] = useState({
+    warmupActive: false,
+    uptimeHours: 0,
+    lastUpdate: null,
+    mqttConnected: false,
+    dataStorageActive: false
+  });
   
   // Date range for filtering chart data
   const [dateRange, setDateRange] = useState({
@@ -192,6 +202,17 @@ export default function Dashboard() {
   useEffect(() => {
     fetchChartData();
   }, [fetchChartData]);
+  
+  // Fetch system status on component mount and set up periodic refresh
+  useEffect(() => {
+    fetchSystemStatus();
+    
+    const statusInterval = setInterval(() => {
+      fetchSystemStatus();
+    }, 5000); // Update every 5 seconds
+    
+    return () => clearInterval(statusInterval);
+  }, [fetchSystemStatus]);
   
   // Auto-refresh chart data every 10 seconds if auto-refresh is enabled
   useEffect(() => {
@@ -382,6 +403,23 @@ export default function Dashboard() {
       </header>
       
       <main className="container mx-auto px-4 py-6">
+        {/* System Status Banner */}
+        {systemStatus.warmupActive && (
+          <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
+            <div className="flex items-center">
+              <AlertTriangle className="h-5 w-5 text-yellow-400 mr-2" />
+              <div>
+                <p className="text-yellow-800 font-medium">
+                  System sedang dalam mode warmup
+                </p>
+                <p className="text-yellow-700 text-sm">
+                  Data sensor sedang distabilkan. Penyimpanan data akan aktif setelah warmup selesai.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+        
         {/* Sensor Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           {/* pH Card */}
@@ -490,7 +528,7 @@ export default function Dashboard() {
             <div className="h-80">
               <h3 className="text-lg font-medium text-gray-700 mb-2 flex items-center">
                 <Droplet className="h-5 w-5 mr-1 text-blue-500" />
-                pH Level & Error Analysis
+                pH Level
               </h3>
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={historicalData}>
@@ -527,7 +565,7 @@ export default function Dashboard() {
             <div className="h-80">
               <h3 className="text-lg font-medium text-gray-700 mb-2 flex items-center">
                 <Thermometer className="h-5 w-5 mr-1 text-red-500" />
-                Temperature Level & Error Analysis
+                Temperature Level
               </h3>
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={historicalData}>
@@ -826,6 +864,9 @@ export default function Dashboard() {
             <h3 className="text-sm font-medium text-blue-900 mb-2">Cara Kalibrasi:</h3>
             <ol className="text-sm text-blue-800 space-y-1">
               <li>1. Ukur pH larutan dengan pH meter standar</li>
+              <li>2. Masukkan nilai pH meter ke kolom &quot;Nilai pH Meter&quot;</li>
+              <li>3. Masukkan nilai pH yang terbaca sensor ke kolom &quot;Nilai pH Sensor&quot;</li>
+              <li>4. Klik tombol &quot;Kalibrasi pH&quot; untuk mengirim offset ke ESP32</li>
               <li>2. Masukkan nilai pH meter ke kolom &quot;Nilai pH Meter&quot;</li>
               <li>3. Masukkan nilai pH yang terbaca sensor ke kolom &quot;Nilai pH Sensor&quot;</li>
               <li>4. Klik tombol &quot;Kalibrasi pH&quot; untuk mengirim offset ke ESP32</li>
