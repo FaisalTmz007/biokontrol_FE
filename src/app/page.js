@@ -865,7 +865,7 @@ export default function Dashboard() {
               <li>1. Ukur pH larutan dengan pH meter standar</li>
               <li>2. Masukkan nilai pH meter ke kolom &quot;Nilai pH Meter&quot;</li>
               <li>3. Masukkan nilai pH yang terbaca sensor ke kolom &quot;Nilai pH Sensor&quot;</li>
-              <li>4. Klik tombol "Kalibrasi pH" untuk mengirim offset ke ESP32</li>
+              <li>4. Klik tombol &quot;Kalibrasi pH&quot; untuk mengirim offset ke ESP32</li>
             </ol>
           </div>
         </div>
