@@ -27,15 +27,6 @@ export default function Dashboard() {
   // Sensor error data
   const [sensorErrors, setSensorErrors] = useState([]);
   
-  // System status state
-  const [systemStatus, setSystemStatus] = useState({
-    warmupActive: false,
-    uptimeHours: 0,
-    lastUpdate: null,
-    mqttConnected: false,
-    dataStorageActive: false
-  });
-  
   // Date range for filtering chart data
   const [dateRange, setDateRange] = useState({
     start: new Date(Date.now() - 24*60*60*1000).toISOString().split('T')[0], // Last 24 hours
@@ -232,17 +223,6 @@ export default function Dashboard() {
     fetchChartData();
   }, [fetchChartData]);
   
-  // Fetch system status on component mount and set up periodic refresh
-  useEffect(() => {
-    fetchSystemStatus();
-    
-    const statusInterval = setInterval(() => {
-      fetchSystemStatus();
-    }, 5000); // Update every 5 seconds
-    
-    return () => clearInterval(statusInterval);
-  }, [fetchSystemStatus]);
-  
   // Auto-refresh chart data every 10 seconds if auto-refresh is enabled
   useEffect(() => {
     if (!autoRefresh) return;
@@ -434,7 +414,7 @@ export default function Dashboard() {
       
       <main className="container mx-auto px-4 py-6">
         {/* System Status Banner */}
-        {systemStatus.warmupActive && (
+        {isWarmingUp && (
           <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
             <div className="flex items-center">
               <AlertTriangle className="h-5 w-5 text-yellow-400 mr-2" />
