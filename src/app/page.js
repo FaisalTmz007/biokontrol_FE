@@ -527,7 +527,7 @@ export default function Dashboard() {
             <div className="h-80">
               <h3 className="text-lg font-medium text-gray-700 mb-2 flex items-center">
                 <Droplet className="h-5 w-5 mr-1 text-blue-500" />
-                pH Level & Error Analysis
+                pH Level
               </h3>
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={historicalData}>
@@ -564,7 +564,7 @@ export default function Dashboard() {
             <div className="h-80">
               <h3 className="text-lg font-medium text-gray-700 mb-2 flex items-center">
                 <Thermometer className="h-5 w-5 mr-1 text-red-500" />
-                Temperature Level & Error Analysis
+                Temperature Level
               </h3>
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={historicalData}>
