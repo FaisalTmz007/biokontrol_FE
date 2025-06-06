@@ -27,15 +27,6 @@ export default function Dashboard() {
   // Sensor error data
   const [sensorErrors, setSensorErrors] = useState([]);
   
-  // System status state
-  const [systemStatus, setSystemStatus] = useState({
-    warmupActive: false,
-    uptimeHours: 0,
-    lastUpdate: null,
-    mqttConnected: false,
-    dataStorageActive: false
-  });
-  
   // Date range for filtering chart data
   const [dateRange, setDateRange] = useState({
     start: new Date(Date.now() - 24*60*60*1000).toISOString().split('T')[0], // Last 24 hours
@@ -69,32 +60,32 @@ export default function Dashboard() {
   });
 
   // FIXED: Function to fetch system status
-  const fetchSystemStatus = useCallback(async () => {
-    try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/system-status`);
-      const result = await response.json();
+  // const fetchSystemStatus = useCallback(async () => {
+  //   try {
+  //     const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/system-status`);
+  //     const result = await response.json();
       
-      if (result.success) {
-        setSystemStatus({
-          warmupActive: result.data.warmupActive || false,
-          uptimeHours: result.data.uptimeHours || 0,
-          lastUpdate: result.data.lastUpdate || null,
-          mqttConnected: result.data.mqttConnected || false,
-          dataStorageActive: result.data.dataStorageActive || false
-        });
-      }
-    } catch (error) {
-      console.error('Error fetching system status:', error);
-      // Set default values if fetch fails
-      setSystemStatus({
-        warmupActive: false,
-        uptimeHours: 0,
-        lastUpdate: null,
-        mqttConnected: false,
-        dataStorageActive: false
-      });
-    }
-  }, []);
+  //     if (result.success) {
+  //       setSystemStatus({
+  //         warmupActive: result.data.warmupActive || false,
+  //         uptimeHours: result.data.uptimeHours || 0,
+  //         lastUpdate: result.data.lastUpdate || null,
+  //         mqttConnected: result.data.mqttConnected || false,
+  //         dataStorageActive: result.data.dataStorageActive || false
+  //       });
+  //     }
+  //   } catch (error) {
+  //     console.error('Error fetching system status:', error);
+  //     // Set default values if fetch fails
+  //     setSystemStatus({
+  //       warmupActive: false,
+  //       uptimeHours: 0,
+  //       lastUpdate: null,
+  //       mqttConnected: false,
+  //       dataStorageActive: false
+  //     });
+  //   }
+  // }, []);
   
   // Function to check warmup status
   const checkWarmupStatus = useCallback(async () => {
@@ -174,29 +165,36 @@ export default function Dashboard() {
     }
   }, [dateRange]);
   
-  // Fetch the latest sensor data
+  // Fetch the latest sensor data on mount
   useEffect(() => {
-    const fetchSensorData = async () => {
-      const { data, error } = await supabase
-        .from('sensors')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(1);
-        
-      if (error) {
-        console.error('Error fetching sensor data:', error);
-        return;
-      }
+    // Initial fetch
+    fetchLatestSensorData();
+    
+    // Set up real-time subscription to sensor data
+    const subscription = supabase
+      .channel('sensor-changes')
+      .on('postgres_changes', 
+        { event: 'INSERT', schema: 'public', table: 'sensors' }, 
+        payload => {
+          setSensorData({
+            ph: payload.new.ph,
+            temp: payload.new.temp,
+            ch4: payload.new.ch4,
+            pressure: payload.new.pressure
+          });
+          
+          // Auto-refresh chart data when new sensor data arrives
+          if (autoRefresh) {
+            fetchChartData();
+          }
+        }
+      )
+      .subscribe();
       
-      if (data && data.length > 0) {
-        setSensorData({
-          ph: data[0].ph,
-          temp: data[0].temp,
-          ch4: data[0].ch4,
-          pressure: data[0].pressure
-        });
-      }
+    return () => {
+      supabase.removeChannel(subscription);
     };
+  }, [fetchLatestSensorData, fetchChartData, autoRefresh]);
     
     // Fetch latest sensor data
     fetchSensorData();
@@ -231,17 +229,6 @@ export default function Dashboard() {
   useEffect(() => {
     fetchChartData();
   }, [fetchChartData]);
-  
-  // Fetch system status on component mount and set up periodic refresh
-  useEffect(() => {
-    fetchSystemStatus();
-    
-    const statusInterval = setInterval(() => {
-      fetchSystemStatus();
-    }, 5000); // Update every 5 seconds
-    
-    return () => clearInterval(statusInterval);
-  }, [fetchSystemStatus]);
   
   // Auto-refresh chart data every 10 seconds if auto-refresh is enabled
   useEffect(() => {
@@ -294,6 +281,33 @@ export default function Dashboard() {
       console.error('Error fetching actuators:', error);
     }
   }, []);
+
+  // Function to fetch latest sensor data
+const fetchLatestSensorData = useCallback(async () => {
+  try {
+    const { data, error } = await supabase
+      .from('sensors')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(1);
+      
+    if (error) {
+      console.error('Error fetching sensor data:', error);
+      return;
+    }
+    
+    if (data && data.length > 0) {
+      setSensorData({
+        ph: data[0].ph,
+        temp: data[0].temp,
+        ch4: data[0].ch4,
+        pressure: data[0].pressure
+      });
+    }
+  } catch (error) {
+    console.error('Error fetching latest sensor data:', error);
+  }
+}, []);
   
   // Fetch actuator states
   useEffect(() => {
@@ -331,6 +345,17 @@ export default function Dashboard() {
     
     return () => clearInterval(actuatorInterval);
   }, [fetchActuators, autoRefresh]);
+
+  // Auto-refresh sensor data every 5 seconds if auto-refresh is enabled
+useEffect(() => {
+  if (!autoRefresh) return;
+  
+  const sensorInterval = setInterval(() => {
+    fetchLatestSensorData();
+  }, 5000); // 5 seconds - frequent updates for current values
+  
+  return () => clearInterval(sensorInterval);
+}, [fetchLatestSensorData, autoRefresh]);
   
   // Function to handle pH calibration
   const handlePhCalibration = async () => {
@@ -409,7 +434,7 @@ export default function Dashboard() {
                     isWarmingUp ? 'bg-orange-200 animate-pulse' : 'bg-green-200'
                   }`}></div>
                   <span className="text-sm">
-                    {isWarmingUp ? `Warming Up (${warmupProgress}%)` : 'Ready'}
+                    {isWarmingUp ? 'Warming up' : 'Ready'}
                   </span>
                 </div>
               </div>
@@ -434,7 +459,7 @@ export default function Dashboard() {
       
       <main className="container mx-auto px-4 py-6">
         {/* System Status Banner */}
-        {systemStatus.warmupActive && (
+        {isWarmingUp && (
           <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
             <div className="flex items-center">
               <AlertTriangle className="h-5 w-5 text-yellow-400 mr-2" />
