@@ -59,6 +59,8 @@ export default function Dashboard() {
     stirrer: 0
   });
 
+  const [quickTimeFilter, setQuickTimeFilter] = useState('24h'); // '1h', '12h', '24h', 'custom'
+
   // FIXED: Function to fetch system status
   // const fetchSystemStatus = useCallback(async () => {
   //   try {
@@ -105,6 +107,70 @@ export default function Dashboard() {
       setWarmupProgress(0);
     }
   }, []);
+
+  // Function to fetch latest sensor data
+  const fetchLatestSensorData = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('sensors')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(1);
+        
+      if (error) {
+        console.error('Error fetching sensor data:', error);
+        return;
+      }
+      
+      if (data && data.length > 0) {
+        setSensorData({
+          ph: data[0].ph,
+          temp: data[0].temp,
+          ch4: data[0].ch4,
+          pressure: data[0].pressure
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching latest sensor data:', error);
+    }
+  }, []);
+
+  const setQuickFilter = (period) => {
+    const now = new Date();
+    let startDate;
+    
+    switch(period) {
+      case '1h':
+        startDate = new Date(now.getTime() - 1*60*60*1000); // 1 jam yang lalu
+        break;
+      case '12h':
+        startDate = new Date(now.getTime() - 12*60*60*1000); // 12 jam yang lalu
+        break;
+      case '24h':
+        startDate = new Date(now.getTime() - 24*60*60*1000); // 24 jam yang lalu
+        break;
+      default:
+        return; // untuk 'custom', tidak mengubah dateRange
+    }
+    
+    if (period !== 'custom') {
+      setDateRange({
+        start: startDate.toISOString().split('T')[0],
+        end: now.toISOString().split('T')[0]
+      });
+    }
+    
+    setQuickTimeFilter(period);
+  };
+
+  const getTimeOffset = () => {
+    switch(quickTimeFilter) {
+      case '1h': return 1*60*60*1000;
+      case '12h': return 12*60*60*1000;
+      case '24h': return 24*60*60*1000;
+      default: return 24*60*60*1000;
+    }
+  };
   
   // Function to fetch historical data and sensor errors
   const fetchChartData = useCallback(async () => {
@@ -115,8 +181,12 @@ export default function Dashboard() {
       const { data: historicalData, error: historicalError } = await supabase
         .from('sensors')
         .select('*')
-        .gte('created_at', `${dateRange.start}T00:00:00Z`)
-        .lte('created_at', `${dateRange.end}T23:59:59Z`)
+        .gte('created_at', quickTimeFilter === 'custom' 
+          ? `${dateRange.start}T00:00:00Z` 
+          : new Date(Date.now() - getTimeOffset()).toISOString())
+        .lte('created_at', quickTimeFilter === 'custom' 
+          ? `${dateRange.end}T23:59:59Z` 
+          : new Date().toISOString())
         .order('created_at', { ascending: true });
         
       if (historicalError) {
@@ -138,8 +208,12 @@ export default function Dashboard() {
       const { data: errorData, error: errorError } = await supabase
         .from('sensor_errors')
         .select('*')
-        .gte('created_at', `${dateRange.start}T00:00:00Z`)
-        .lte('created_at', `${dateRange.end}T23:59:59Z`)
+        .gte('created_at', quickTimeFilter === 'custom' 
+          ? `${dateRange.start}T00:00:00Z` 
+          : new Date(Date.now() - getTimeOffset()).toISOString())
+        .lte('created_at', quickTimeFilter === 'custom' 
+          ? `${dateRange.end}T23:59:59Z` 
+          : new Date().toISOString())
         .order('created_at', { ascending: true });
         
       if (errorError) {
@@ -195,35 +269,6 @@ export default function Dashboard() {
       supabase.removeChannel(subscription);
     };
   }, [fetchLatestSensorData, fetchChartData, autoRefresh]);
-    
-    // Fetch latest sensor data
-    fetchSensorData();
-    
-    // Set up real-time subscription to sensor data
-    const subscription = supabase
-      .channel('sensor-changes')
-      .on('postgres_changes', 
-        { event: 'INSERT', schema: 'public', table: 'sensors' }, 
-        payload => {
-          setSensorData({
-            ph: payload.new.ph,
-            temp: payload.new.temp,
-            ch4: payload.new.ch4,
-            pressure: payload.new.pressure
-          });
-          
-          // Auto-refresh chart data when new sensor data arrives
-          if (autoRefresh) {
-            fetchChartData();
-          }
-        }
-      )
-      .subscribe();
-      
-    return () => {
-      supabase.removeChannel(subscription);
-    };
-  }, [fetchChartData, autoRefresh]);
   
   // Fetch chart data when date range changes or component mounts
   useEffect(() => {
@@ -281,33 +326,6 @@ export default function Dashboard() {
       console.error('Error fetching actuators:', error);
     }
   }, []);
-
-  // Function to fetch latest sensor data
-const fetchLatestSensorData = useCallback(async () => {
-  try {
-    const { data, error } = await supabase
-      .from('sensors')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(1);
-      
-    if (error) {
-      console.error('Error fetching sensor data:', error);
-      return;
-    }
-    
-    if (data && data.length > 0) {
-      setSensorData({
-        ph: data[0].ph,
-        temp: data[0].temp,
-        ch4: data[0].ch4,
-        pressure: data[0].pressure
-      });
-    }
-  } catch (error) {
-    console.error('Error fetching latest sensor data:', error);
-  }
-}, []);
   
   // Fetch actuator states
   useEffect(() => {
@@ -514,7 +532,7 @@ useEffect(() => {
             <div className="flex flex-col items-center">
               <div className="text-4xl font-bold text-yellow-600">{sensorData.ch4.toFixed(2)} ppm</div>
               <div className="text-sm text-gray-500 mt-2">
-                Warning: Above 1000 ppm
+                Warning: Above 1015 ppm
               </div>
             </div>
           </div>
@@ -547,25 +565,78 @@ useEffect(() => {
             
             {/* Date Range Filter - Auto applies on change */}
             <div className="flex items-center space-x-4">
+              {/* Quick Time Filters */}
               <div className="flex items-center space-x-2">
-                <Calendar className="h-5 w-5 text-gray-500" />
-                <input 
-                  type="date" 
-                  value={dateRange.start}
-                  onChange={(e) => setDateRange({...dateRange, start: e.target.value})}
-                  className="border rounded px-2 py-1 text-sm text-gray-700"
-                />
+                <span className="text-sm text-gray-600">Quick Filter:</span>
+                <div className="flex space-x-1">
+                  <button
+                    onClick={() => setQuickFilter('1h')}
+                    className={`px-3 py-1 rounded text-sm ${
+                      quickTimeFilter === '1h' 
+                        ? 'bg-blue-500 text-white' 
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    }`}
+                  >
+                    1 Jam
+                  </button>
+                  <button
+                    onClick={() => setQuickFilter('12h')}
+                    className={`px-3 py-1 rounded text-sm ${
+                      quickTimeFilter === '12h' 
+                        ? 'bg-blue-500 text-white' 
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    }`}
+                  >
+                    12 Jam
+                  </button>
+                  <button
+                    onClick={() => setQuickFilter('24h')}
+                    className={`px-3 py-1 rounded text-sm ${
+                      quickTimeFilter === '24h' 
+                        ? 'bg-blue-500 text-white' 
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    }`}
+                  >
+                    24 Jam
+                  </button>
+                  <button
+                    onClick={() => setQuickTimeFilter('custom')}
+                    className={`px-3 py-1 rounded text-sm ${
+                      quickTimeFilter === 'custom' 
+                        ? 'bg-blue-500 text-white' 
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    }`}
+                  >
+                    Custom
+                  </button>
+                </div>
               </div>
-              <div className="text-gray-500">to</div>
-              <div className="flex items-center space-x-2">
-                <Calendar className="h-5 w-5 text-gray-500" />
-                <input 
-                  type="date" 
-                  value={dateRange.end}
-                  onChange={(e) => setDateRange({...dateRange, end: e.target.value})}
-                  className="border rounded px-2 py-1 text-sm text-gray-700"
-                />
-              </div>
+              
+              {/* Custom Date Range - hanya tampil jika custom dipilih */}
+              {quickTimeFilter === 'custom' && (
+                <>
+                  <div className="flex items-center space-x-2">
+                    <Calendar className="h-5 w-5 text-gray-500" />
+                    <input 
+                      type="date" 
+                      value={dateRange.start}
+                      onChange={(e) => setDateRange({...dateRange, start: e.target.value})}
+                      className="border rounded px-2 py-1 text-sm text-gray-700"
+                    />
+                  </div>
+                  <div className="text-gray-500">to</div>
+                  <div className="flex items-center space-x-2">
+                    <Calendar className="h-5 w-5 text-gray-500" />
+                    <input 
+                      type="date" 
+                      value={dateRange.end}
+                      onChange={(e) => setDateRange({...dateRange, end: e.target.value})}
+                      className="border rounded px-2 py-1 text-sm text-gray-700"
+                    />
+                  </div>
+                </>
+              )}
+              
               <button 
                 onClick={fetchChartData}
                 disabled={isLoadingCharts}
